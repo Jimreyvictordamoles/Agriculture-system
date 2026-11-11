@@ -1,0 +1,12 @@
+body {
+    background-color: #f4f6f4;
+}
+
+.auth-card {
+    max-width: 440px;
+    margin: 2.5rem auto;
+}
+
+footer {
+    margin-top: 2rem;
+}

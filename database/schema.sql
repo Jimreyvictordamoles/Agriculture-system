@@ -6,9 +6,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ---------------------------------------------------------------------
--- 2. Lookup tables (dropdown values stored as IDs in other tables)
--- ---------------------------------------------------------------------
 CREATE TABLE harvest_remark (
     remark_id          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     remark_description VARCHAR(50) NOT NULL UNIQUE,
@@ -58,9 +55,6 @@ CREATE TABLE season (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ---------------------------------------------------------------------
--- 3. Main tables
--- ---------------------------------------------------------------------
 CREATE TABLE farmer (
     farmer_id        INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     first_name       VARCHAR(50)  NOT NULL,
@@ -123,12 +117,7 @@ CREATE TABLE harvest (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
--- Note: "harvest_date must not be before planting_date" compares two
--- tables, so it is validated in the PHP app, not with a CHECK.
 
--- ---------------------------------------------------------------------
--- 4. Indexes on foreign keys (faster joins, filters and reports)
--- ---------------------------------------------------------------------
 CREATE INDEX idx_farm_farmer      ON farm(farmer_id);
 CREATE INDEX idx_planting_farm    ON planting(farm_id);
 CREATE INDEX idx_planting_crop    ON planting(crop_id);
@@ -136,9 +125,6 @@ CREATE INDEX idx_planting_status  ON planting(status_id);
 CREATE INDEX idx_harvest_planting ON harvest(planting_id);
 CREATE INDEX idx_harvest_date     ON harvest(harvest_date);
 
--- ---------------------------------------------------------------------
--- 5. Triggers: keep updated_at current on all tables
--- ---------------------------------------------------------------------
 DO $$
 DECLARE
     t TEXT;
@@ -155,10 +141,6 @@ BEGIN
     END LOOP;
 END $$;
 
--- ---------------------------------------------------------------------
--- 6. Security: block the public Supabase API, since the app connects
---    directly to Postgres with the server-side credentials in .env.
--- ---------------------------------------------------------------------
 ALTER TABLE harvest_remark  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quality_grade   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE planting_status ENABLE ROW LEVEL SECURITY;
@@ -172,9 +154,6 @@ ALTER TABLE crop            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE planting        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE harvest         ENABLE ROW LEVEL SECURITY;
 
--- ---------------------------------------------------------------------
--- 7. Lookup data (inserted in order, so the first harvest remark is 1)
--- ---------------------------------------------------------------------
 INSERT INTO harvest_remark (remark_description) VALUES
     ('Good Harvest'),
     ('Acceptable Quality'),
