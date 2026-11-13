@@ -15,9 +15,21 @@ $user      = current_user();
 </head>
 <body>
 <?php if ($user): ?>
-<nav class="navbar navbar-expand-lg navbar-dark bg-success">
+<?php
+$path = $_SERVER['SCRIPT_NAME'];
+$navItems = [
+    'Dashboard' => ['dashboard.php',                 '/dashboard.php'],
+    'Farmers'   => ['modules/farmers/index.php',     '/modules/farmers/'],
+    'Farms'     => ['modules/farms/index.php',       '/modules/farms/'],
+    'Crops'     => ['modules/crops/index.php',       '/modules/crops/'],
+    'Plantings' => ['modules/plantings/index.php',   '/modules/plantings/'],
+    'Harvests'  => ['modules/harvests/index.php',    '/modules/harvests/'],
+    'Reports'   => ['reports/index.php',             '/reports/'],
+];
+?>
+<nav class="navbar navbar-expand-xl navbar-dark bg-success shadow-sm">
     <div class="container">
-        <a class="navbar-brand" href="<?= BASE_URL ?>dashboard.php"><?= e(APP_NAME) ?></a>
+        <a class="navbar-brand fw-semibold" href="<?= BASE_URL ?>dashboard.php"><?= e(APP_NAME) ?></a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
                 data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false"
                 aria-label="Toggle navigation">
@@ -25,18 +37,18 @@ $user      = current_user();
         </button>
         <div class="collapse navbar-collapse" id="mainNav">
             <ul class="navbar-nav me-auto">
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>dashboard.php">Dashboard</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>modules/farmers/index.php">Farmers</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>modules/farms/index.php">Farms</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>modules/crops/index.php">Crops</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>modules/plantings/index.php">Plantings</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>modules/harvests/index.php">Harvests</a></li>
+                <?php foreach ($navItems as $label => [$href, $match]): ?>
+                    <li class="nav-item">
+                        <a class="nav-link text-white <?= strpos($path, $match) !== false ? 'active fw-semibold border-bottom border-2 border-white' : 'opacity-75' ?>"
+                           href="<?= BASE_URL . $href ?>"><?= e($label) ?></a>
+                    </li>
+                <?php endforeach; ?>
             </ul>
-            <span class="navbar-text me-3">
-                <?= e($user['full_name']) ?>
+            <div class="d-flex align-items-center gap-2 text-nowrap">
+                <span class="text-white"><?= e($user['full_name']) ?></span>
                 <span class="badge bg-light text-success"><?= e($user['role_name']) ?></span>
-            </span>
-            <a class="btn btn-outline-light btn-sm" href="<?= BASE_URL ?>logout.php">Logout</a>
+                <a class="btn btn-outline-light btn-sm ms-2" href="<?= BASE_URL ?>logout.php">Logout</a>
+            </div>
         </div>
     </div>
 </nav>
