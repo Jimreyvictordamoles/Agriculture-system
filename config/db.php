@@ -1,21 +1,30 @@
 <?php
-// Reads credentials from real environment variables (Render, etc.)
-// and falls back to the local .env file for XAMPP/local use.
-$fileEnv = file_exists(__DIR__ . '/../.env') ? parse_ini_file(__DIR__ . '/../.env') : [];
-
-$cfg = function (string $key, string $default = '') use ($fileEnv): string {
+// Database settings come from environment variables when they exist (hosting),
+// otherwise from the .env file (local XAMPP).
+$env     = [];
+$envFile = __DIR__ . '/../.env';
+if (is_readable($envFile)) {
+    $env = parse_ini_file($envFile) ?: [];
+}
+foreach (['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'] as $key) {
     $value = getenv($key);
     if ($value !== false && $value !== '') {
-        return $value;
+        $env[$key] = $value;
     }
-    return (string) ($fileEnv[$key] ?? $default);
-};
+}
+
+foreach (['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'] as $key) {
+    if (!isset($env[$key])) {
+        error_log("Database setting $key is missing.");
+        die('Database settings are missing.');
+    }
+}
 
 try {
     $pdo = new PDO(
-        "pgsql:host={$cfg('DB_HOST')};port={$cfg('DB_PORT', '5432')};dbname={$cfg('DB_NAME', 'postgres')};sslmode=require",
-        $cfg('DB_USER'),
-        $cfg('DB_PASSWORD'),
+        "pgsql:host={$env['DB_HOST']};port={$env['DB_PORT']};dbname={$env['DB_NAME']};sslmode=require",
+        $env['DB_USER'],
+        $env['DB_PASSWORD'],
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
 } catch (PDOException $e) {

@@ -10,6 +10,9 @@ RUN printf '<FilesMatch "^\\.">\n    Require all denied\n</FilesMatch>\n' \
     > /etc/apache2/conf-available/block-dotfiles.conf \
     && a2enconf block-dotfiles
 
+# Production PHP settings (do not show errors to visitors)
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
 # Site lives at the web root, so BASE_URL must be "/" (set it in Render)
 COPY . /var/www/html/
 RUN chown -R www-data:www-data /var/www/html
