@@ -34,15 +34,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errors) {
-            $active = $row && in_array($row['is_active'], [true, 't', '1', 1], true);
+            $active     = $row && in_array($row['is_active'], [true, 't', '1', 1], true);
+            $passwordOk = $row && password_verify($password, $row['password_hash']);
 
-            if ($row && $active && password_verify($password, $row['password_hash'])) {
+            if ($passwordOk && $active) {
                 login_user($row);
                 set_flash('success', 'Login successful. Welcome, ' . $row['full_name'] . '!');
                 redirect('dashboard.php');
             }
-            // Same message for wrong username, wrong password or inactive account
-            $errors[] = 'Invalid username or password.';
+
+            if ($passwordOk && !$active) {
+                // Only shown when the password is correct, so it does not reveal which usernames exist
+                $errors[] = 'Your account is waiting for administrator approval, or it has been deactivated. Please contact an Administrator.';
+            } else {
+                // Same message for a wrong username or a wrong password
+                $errors[] = 'Invalid username or password.';
+            }
         }
     }
 }

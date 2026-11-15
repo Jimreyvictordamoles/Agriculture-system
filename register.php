@@ -35,22 +35,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$errors) {
         try {
             // The role is set here in the code and is never read from the form,
-            // so a visitor cannot sign up as an Administrator.
+            // so a visitor cannot sign up as an Administrator. The account starts
+            // inactive (is_active = FALSE) until an Administrator approves it.
             $stmt = $pdo->prepare(
-                "INSERT INTO users (role_id, username, password_hash, full_name)
+                "INSERT INTO users (role_id, username, password_hash, full_name, is_active)
                  VALUES ((SELECT role_id FROM user_role WHERE role_name = 'Staff'),
-                         :username, :hash, :full_name)"
+                         :username, :hash, :full_name, FALSE)"
             );
             $stmt->execute([
                 ':username'  => $username,
                 ':hash'      => password_hash($password, PASSWORD_DEFAULT),
                 ':full_name' => $fullName,
             ]);
-            set_flash('success', 'Account created successfully! Please log in.');
+            set_flash('info', 'Your account was created and is waiting for administrator approval. You can log in once it has been approved.');
             redirect('login.php');
         } catch (PDOException $ex) {
             if ($ex->getCode() === '23505') {
-                $errors[] = 'That username is already taken. If you just created this account, go to the login page and use it.';
+                $errors[] = 'That username is already taken.';
             } else {
                 error_log($ex->getMessage());
                 $errors[] = 'Something went wrong. Please try again.';
@@ -65,7 +66,7 @@ require __DIR__ . '/includes/header.php';
 <div class="card shadow-sm auth-card">
     <div class="card-body p-4">
         <h1 class="h4 mb-1">Create an account</h1>
-        <p class="text-muted mb-4">New accounts are created with the Staff role.</p>
+        <p class="text-muted mb-4">New accounts are created with the Staff role and must be approved by an Administrator before you can log in.</p>
 
         <?php foreach ($errors as $error): ?>
             <div class="alert alert-danger py-2"><?= e($error) ?></div>
