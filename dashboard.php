@@ -2,7 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_login();
 // Brings in format_date() and status_badge() (shared helper functions)
-require_once __DIR__ . '/modules/plantings/_helpers.php';
+require_once __DIR__ . '/modules/plantings/Planting.php';
 
 $counts = ['farmers' => 0, 'farms' => 0, 'crops' => 0, 'plantings' => 0, 'harvests' => 0];
 $totalKg          = 0.0;

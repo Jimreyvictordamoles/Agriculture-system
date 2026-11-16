@@ -1,18 +1,24 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
 require_admin();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/User.php';
+require_once __DIR__ . '/UserValidator.php';
 
-$roles    = user_roles($pdo);
-$staffId  = array_search('Staff', $roles, true);
-$errors   = [];
-$values   = ['full_name' => '', 'username' => '', 'role_id' => $staffId === false ? '' : (string) $staffId, 'is_active' => '1'];
+$userModel = new User($pdo);
+$roles     = $userModel->fetchRoles();
+$staffId   = array_search('Staff', $roles, true);
+$errors    = [];
+$values    = ['full_name' => '', 'username' => '', 'role_id' => $staffId === false ? '' : (string) $staffId, 'is_active' => '1'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
         $errors[] = 'Your session expired. Please try again.';
     } else {
-        $result = validate_new_user($_POST, $roles);
+        // ASSUMPTION: adjust these two lines to match your UserValidator.php
+        // (constructor argument and validate() arguments).
+        $validator = new UserValidator($userModel);
+        $result    = $validator->validate($_POST, $roles);
+
         $errors = $result['errors'];
         $values = $result['values'];
 

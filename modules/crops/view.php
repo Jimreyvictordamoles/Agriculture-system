@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Crop.php';
 require_login();
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
@@ -8,21 +9,13 @@ if (!$id) {
     redirect('modules/crops/index.php');
 }
 
+$cropModel = new Crop($pdo);
+
 try {
-    $stmt = $pdo->prepare(
-        'SELECT c.crop_id, c.crop_name, c.variety, c.growing_period_days,
-                c.created_at, c.updated_at, cc.category_name, s.season_name,
-                (SELECT COUNT(*) FROM planting p WHERE p.crop_id = c.crop_id) AS planting_count
-         FROM crop c
-         LEFT JOIN crop_category cc ON cc.category_id = c.category_id
-         LEFT JOIN season s ON s.season_id = c.season_id
-         WHERE c.crop_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $crop = $stmt->fetch(PDO::FETCH_ASSOC);
+    $crop = $cropModel->find($id);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
-    $crop = false;
+    $crop = null;
 }
 
 if (!$crop) {

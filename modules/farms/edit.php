@@ -1,7 +1,9 @@
 <?php
+require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farm.php';
+require_once __DIR__ . '/FarmValidator.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
@@ -9,6 +11,8 @@ if (!$id) {
     redirect('modules/farms/index.php');
 }
 
+$farmModel       = new Farm($pdo);
+$validator       = new FarmValidator($farmModel);
 $errors          = [];
 $farmers         = [];
 $soilTypes       = [];
@@ -23,12 +27,7 @@ $values          = [
 ];
 
 try {
-    $stmt = $pdo->prepare(
-        'SELECT farmer_id, farm_name, location, area_hectares, soil_type_id, irrigation_id
-         FROM farm WHERE farm_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $farm = $stmt->fetch(PDO::FETCH_ASSOC);
+    $farm = $farmModel->findForEdit($id);
 
     if (!$farm) {
         set_flash('danger', 'Farm not found.');
@@ -39,35 +38,20 @@ try {
         $values[$field] = (string) ($farm[$field] ?? '');
     }
 
-    $farmers         = fetch_farmer_options($pdo);
-    $soilTypes       = fetch_lookup($pdo, 'soil_type', 'soil_type_id', 'soil_type_name');
-    $irrigationTypes = fetch_lookup($pdo, 'irrigation_type', 'irrigation_id', 'irrigation_name');
+    $farmers         = $farmModel->fetchFarmerOptions();
+    $soilTypes       = $farmModel->fetchSoilTypes();
+    $irrigationTypes = $farmModel->fetchIrrigationTypes();
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_farm($_POST, $farmers, $soilTypes, $irrigationTypes, $pdo, $id);
+            $result = $validator->validate($_POST, $farmers, $soilTypes, $irrigationTypes, $id);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'UPDATE farm
-                     SET farmer_id = :farmer_id, farm_name = :farm_name, location = :location,
-                         area_hectares = :area, soil_type_id = :soil_type_id, irrigation_id = :irrigation_id
-                     WHERE farm_id = :id'
-                );
-                $stmt->execute([
-                    ':farmer_id'     => $c['farmer_id'],
-                    ':farm_name'     => $c['farm_name'],
-                    ':location'      => $c['location'],
-                    ':area'          => $c['area_hectares'],
-                    ':soil_type_id'  => $c['soil_type_id'],
-                    ':irrigation_id' => $c['irrigation_id'],
-                    ':id'            => $id,
-                ]);
+                $farmModel->update($id, $result['clean']);
                 set_flash('success', 'Farm updated successfully.');
                 redirect('modules/farms/index.php');
             }

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farm.php';
 require_admin();   // only Administrators may delete
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
@@ -13,20 +14,18 @@ if (!$id) {
     redirect('modules/farms/index.php');
 }
 
-try {
-    $stmt = $pdo->prepare('SELECT farm_name FROM farm WHERE farm_id = :id');
-    $stmt->execute([':id' => $id]);
-    $name = $stmt->fetchColumn();
+$farmModel = new Farm($pdo);
 
-    if ($name === false) {
+try {
+    $name = $farmModel->getName($id);
+
+    if ($name === null) {
         set_flash('danger', 'Farm not found.');
         redirect('modules/farms/index.php');
     }
 
     // Referential integrity: a farm that still has plantings cannot be deleted
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM planting WHERE farm_id = :id');
-    $stmt->execute([':id' => $id]);
-    $used = (int) $stmt->fetchColumn();
+    $used = $farmModel->countPlantings($id);
 
     if ($used > 0) {
         set_flash('danger', 'Cannot delete "' . $name . '": it still has ' . $used
@@ -34,8 +33,7 @@ try {
         redirect('modules/farms/index.php');
     }
 
-    $stmt = $pdo->prepare('DELETE FROM farm WHERE farm_id = :id');
-    $stmt->execute([':id' => $id]);
+    $farmModel->delete($id);
     set_flash('success', 'Farm "' . $name . '" was deleted.');
 } catch (PDOException $ex) {
     error_log($ex->getMessage());

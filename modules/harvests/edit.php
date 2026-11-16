@@ -1,13 +1,17 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/HarvestValidator.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
     set_flash('danger', 'Harvest not found.');
     redirect('modules/harvests/index.php');
 }
+
+$harvestModel = new Harvest($pdo);
+$validator    = new HarvestValidator($harvestModel);
 
 $errors    = [];
 $plantings = [];
@@ -23,12 +27,7 @@ $values    = [
 ];
 
 try {
-    $stmt = $pdo->prepare(
-        'SELECT planting_id, harvest_date, quantity_kg, selling_price_per_kg, grade_id, remark_id
-         FROM harvest WHERE harvest_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $harvest = $stmt->fetch(PDO::FETCH_ASSOC);
+    $harvest = $harvestModel->findForEdit($id);
 
     if (!$harvest) {
         set_flash('danger', 'Harvest not found.');
@@ -39,36 +38,20 @@ try {
         $values[$field] = (string) ($harvest[$field] ?? '');
     }
 
-    $plantings = fetch_planting_options($pdo);
-    $grades    = fetch_lookup($pdo, 'quality_grade', 'grade_id', 'grade_name', true);
-    $remarks   = fetch_lookup($pdo, 'harvest_remark', 'remark_id', 'remark_description', true);
+    $plantings = $harvestModel->fetchPlantingOptions();
+    $grades    = $harvestModel->fetchGrades();
+    $remarks   = $harvestModel->fetchRemarks();
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_harvest($_POST, $plantings, $grades, $remarks, $pdo, $id);
+            $result = $validator->validate($_POST, $plantings, $grades, $remarks, $id);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'UPDATE harvest
-                     SET planting_id = :planting_id, grade_id = :grade_id, remark_id = :remark_id,
-                         harvest_date = :harvest_date, quantity_kg = :quantity,
-                         selling_price_per_kg = :price
-                     WHERE harvest_id = :id'
-                );
-                $stmt->execute([
-                    ':planting_id'  => $c['planting_id'],
-                    ':grade_id'     => $c['grade_id'],
-                    ':remark_id'    => $c['remark_id'],
-                    ':harvest_date' => $c['harvest_date'],
-                    ':quantity'     => $c['quantity_kg'],
-                    ':price'        => $c['selling_price_per_kg'],
-                    ':id'           => $id,
-                ]);
+                $harvestModel->update($id, $result['clean']);
                 set_flash('success', 'Harvest updated successfully.');
                 redirect('modules/harvests/index.php');
             }

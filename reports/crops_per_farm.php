@@ -1,29 +1,14 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/Report.php';
+
+$report = new Report($pdo);
 
 [$dateFrom, $dateTo, $dateError] = report_dates();
 $farmId     = get_int('farm_id');
 $cropId     = get_int('crop_id');
 $categoryId = get_int('category_id');
-
-$where  = [];
-$params = [];
-add_date_range('p.planting_date', $dateFrom, $dateTo, $where, $params);
-if ($farmId > 0) {
-    $where[]            = 'p.farm_id = :farm_id';
-    $params[':farm_id'] = $farmId;
-}
-if ($cropId > 0) {
-    $where[]            = 'p.crop_id = :crop_id';
-    $params[':crop_id'] = $cropId;
-}
-if ($categoryId > 0) {
-    $where[]                = 'c.category_id = :category_id';
-    $params[':category_id'] = $categoryId;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $rows       = [];
 $farms      = [];
@@ -32,30 +17,12 @@ $categories = [];
 $loadError  = false;
 
 try {
-    $farms      = report_farm_options($pdo);
-    $crops      = report_crop_options($pdo);
-    $categories = fetch_lookup($pdo, 'crop_category', 'category_id', 'category_name');
+    $farms      = $report->farmOptions();
+    $crops      = $report->cropOptions();
+    $categories = $report->categoryOptions();
 
     if (!$dateError) {
-        $stmt = $pdo->prepare(
-            "SELECT fm.farm_id, fm.farm_name, fr.first_name, fr.last_name,
-                    c.crop_name, c.variety, cc.category_name,
-                    COUNT(p.planting_id) AS planting_count,
-                    COALESCE(SUM(p.area_planted), 0) AS total_area,
-                    MIN(p.planting_date) AS first_planted,
-                    MAX(p.planting_date) AS last_planted
-             FROM planting p
-             JOIN farm fm ON fm.farm_id = p.farm_id
-             JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-             JOIN crop c ON c.crop_id = p.crop_id
-             LEFT JOIN crop_category cc ON cc.category_id = c.category_id
-             $whereSql
-             GROUP BY fm.farm_id, fm.farm_name, fr.farmer_id, fr.first_name, fr.last_name,
-                      c.crop_id, c.crop_name, c.variety, cc.category_name
-             ORDER BY fm.farm_name, fm.farm_id, c.crop_name, c.variety"
-        );
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $report->cropsPerFarm($dateFrom, $dateTo, $farmId, $cropId, $categoryId);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());

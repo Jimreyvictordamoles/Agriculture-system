@@ -172,3 +172,31 @@ function format_datetime(?string $value): string
     $date->setTimezone(new DateTimeZone('Asia/Manila'));
     return $date->format('M j, Y g:i A');
 }
+
+// Today's date in Philippine time, as YYYY-MM-DD
+if (!function_exists('today_manila')) {
+    function today_manila(): string
+    {
+        return (new DateTime('now', new DateTimeZone('Asia/Manila')))->format('Y-m-d');
+    }
+}
+
+// True if the text is a real calendar date written as YYYY-MM-DD
+if (!function_exists('valid_date_string')) {
+    function valid_date_string(string $value): bool
+    {
+        $date = DateTime::createFromFormat('!Y-m-d', $value);
+        return $date !== false && $date->format('Y-m-d') === $value;
+    }
+}
+
+// Show a YYYY-MM-DD date as "Nov 11, 2026"
+if (!function_exists('format_date')) {
+    function format_date(?string $value): string
+    {
+        if ($value === null || !valid_date_string($value)) {
+            return '';
+        }
+        return DateTime::createFromFormat('!Y-m-d', $value)->format('M j, Y');
+    }
+}

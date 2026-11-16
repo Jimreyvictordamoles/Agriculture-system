@@ -1,55 +1,28 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/Farm.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
+$farmModel    = new Farm($pdo);
 $perPage      = 10;
 $q            = trim($_GET['q'] ?? '');
 $farmerId     = get_int('farmer_id');
 $soilTypeId   = get_int('soil_type_id');
 $irrigationId = get_int('irrigation_id');
 
-// Only these columns may be used for sorting (never trust ?sort= directly)
-$sortMap = [
-    'id'          => ['fm.farm_id'],
-    'farm'        => ['fm.farm_name'],
-    'owner'       => ['fr.last_name', 'fr.first_name'],
-    'location'    => ['fm.location'],
-    'area'        => ['fm.area_hectares'],
-    'soil'        => ['st.soil_type_name'],
-    'irrigation'  => ['ir.irrigation_name'],
-    'plantings'   => ['planting_count'],
-];
 $sort = $_GET['sort'] ?? 'farm';
-if (!isset($sortMap[$sort])) {
+if (!$farmModel->isValidSort($sort)) {
     $sort = 'farm';
 }
-$dir      = (($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
-$orderSql = implode(', ', array_map(fn($column) => "$column $dir NULLS LAST", $sortMap[$sort]));
+$dir = (($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
 
-$where  = [];
-$params = [];
-
-if ($q !== '') {
-    $where[] = "(fm.farm_name ILIKE :q1 OR fm.location ILIKE :q2
-                 OR (fr.first_name || ' ' || fr.last_name) ILIKE :q3)";
-    foreach ([':q1', ':q2', ':q3'] as $name) {
-        $params[$name] = '%' . like_escape($q) . '%';
-    }
-}
-if ($farmerId > 0) {
-    $where[]              = 'fm.farmer_id = :farmer_id';
-    $params[':farmer_id'] = $farmerId;
-}
-if ($soilTypeId > 0) {
-    $where[]                = 'fm.soil_type_id = :soil_type_id';
-    $params[':soil_type_id'] = $soilTypeId;
-}
-if ($irrigationId > 0) {
-    $where[]                 = 'fm.irrigation_id = :irrigation_id';
-    $params[':irrigation_id'] = $irrigationId;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+$filters = [
+    'q'             => $q,
+    'farmer_id'     => $farmerId,
+    'soil_type_id'  => $soilTypeId,
+    'irrigation_id' => $irrigationId,
+];
 
 $farms           = [];
 $farmers         = [];
@@ -58,36 +31,12 @@ $irrigationTypes = [];
 $pager           = paginate(0, $perPage, 1);
 
 try {
-    $farmers         = fetch_farmer_options($pdo);
-    $soilTypes       = fetch_lookup($pdo, 'soil_type', 'soil_type_id', 'soil_type_name');
-    $irrigationTypes = fetch_lookup($pdo, 'irrigation_type', 'irrigation_id', 'irrigation_name');
+    $farmers         = $farmModel->fetchFarmerOptions();
+    $soilTypes       = $farmModel->fetchSoilTypes();
+    $irrigationTypes = $farmModel->fetchIrrigationTypes();
 
-    $stmt = $pdo->prepare(
-        "SELECT COUNT(*) FROM farm fm JOIN farmer fr ON fr.farmer_id = fm.farmer_id $whereSql"
-    );
-    $stmt->execute($params);
-    $pager = paginate((int) $stmt->fetchColumn(), $perPage, get_int('page', 1));
-
-    $sql = "SELECT fm.farm_id, fm.farm_name, fm.location, fm.area_hectares,
-                   fr.farmer_id, fr.first_name, fr.last_name,
-                   st.soil_type_name, ir.irrigation_name,
-                   (SELECT COUNT(*) FROM planting p WHERE p.farm_id = fm.farm_id) AS planting_count
-            FROM farm fm
-            JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-            LEFT JOIN soil_type st ON st.soil_type_id = fm.soil_type_id
-            LEFT JOIN irrigation_type ir ON ir.irrigation_id = fm.irrigation_id
-            $whereSql
-            ORDER BY $orderSql, fm.farm_id ASC
-            LIMIT :limit OFFSET :offset";
-
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $pager['offset'], PDO::PARAM_INT);
-    $stmt->execute();
-    $farms = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $pager = paginate($farmModel->count($filters), $perPage, get_int('page', 1));
+    $farms = $farmModel->getAll($filters, $sort, $dir, $perPage, $pager['offset']);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
     set_flash('danger', 'Could not load the farms. Please try again.');

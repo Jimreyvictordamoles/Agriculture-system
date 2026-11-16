@@ -1,29 +1,14 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/Report.php';
+
+$report = new Report($pdo);
 
 [$dateFrom, $dateTo, $dateError] = report_dates();
 $address      = trim($_GET['address'] ?? '');
 $soilTypeId   = get_int('soil_type_id');
 $irrigationId = get_int('irrigation_id');
-
-$where  = [];
-$params = [];
-add_date_range('fr.date_registered', $dateFrom, $dateTo, $where, $params);
-if ($address !== '') {
-    $where[]            = 'fr.address ILIKE :address';
-    $params[':address'] = '%' . like_escape($address) . '%';
-}
-if ($soilTypeId > 0) {
-    $where[]                 = 'fm.soil_type_id = :soil_type_id';
-    $params[':soil_type_id'] = $soilTypeId;
-}
-if ($irrigationId > 0) {
-    $where[]                  = 'fm.irrigation_id = :irrigation_id';
-    $params[':irrigation_id'] = $irrigationId;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $rows            = [];
 $soilTypes       = [];
@@ -31,23 +16,11 @@ $irrigationTypes = [];
 $loadError       = false;
 
 try {
-    $soilTypes       = fetch_lookup($pdo, 'soil_type', 'soil_type_id', 'soil_type_name');
-    $irrigationTypes = fetch_lookup($pdo, 'irrigation_type', 'irrigation_id', 'irrigation_name');
+    $soilTypes       = $report->soilTypeOptions();
+    $irrigationTypes = $report->irrigationOptions();
 
     if (!$dateError) {
-        $stmt = $pdo->prepare(
-            "SELECT fr.farmer_id, fr.first_name, fr.last_name, fr.contact_number, fr.address,
-                    fr.date_registered, fm.farm_id, fm.farm_name, fm.location, fm.area_hectares,
-                    st.soil_type_name, ir.irrigation_name
-             FROM farmer fr
-             LEFT JOIN farm fm ON fm.farmer_id = fr.farmer_id
-             LEFT JOIN soil_type st ON st.soil_type_id = fm.soil_type_id
-             LEFT JOIN irrigation_type ir ON ir.irrigation_id = fm.irrigation_id
-             $whereSql
-             ORDER BY fr.last_name, fr.first_name, fr.farmer_id, fm.farm_name"
-        );
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $report->farmersFarms($dateFrom, $dateTo, $address, $soilTypeId, $irrigationId);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());

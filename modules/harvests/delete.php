@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/Harvest.php';
 require_admin();   // only Administrators may delete
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
@@ -14,17 +16,15 @@ if (!$id) {
 }
 
 try {
-    $stmt = $pdo->prepare('SELECT 1 FROM harvest WHERE harvest_id = :id');
-    $stmt->execute([':id' => $id]);
+    $harvestModel = new Harvest($pdo);
 
-    if (!$stmt->fetchColumn()) {
+    if ($harvestModel->findForEdit($id) === null) {
         set_flash('danger', 'Harvest not found.');
         redirect('modules/harvests/index.php');
     }
 
     // Nothing else depends on a harvest record, so it can be deleted directly
-    $stmt = $pdo->prepare('DELETE FROM harvest WHERE harvest_id = :id');
-    $stmt->execute([':id' => $id]);
+    $harvestModel->delete($id);
     set_flash('success', 'Harvest record was deleted.');
 } catch (PDOException $ex) {
     error_log($ex->getMessage());

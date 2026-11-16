@@ -26,21 +26,21 @@
             <label for="category_id" class="form-label">Category <span class="text-danger">*</span></label>
             <select class="form-select" id="category_id" name="category_id" required>
                 <option value="">-- Select category --</option>
-                <?php foreach ($categories as $id => $name): ?>
-                    <option value="<?= $id ?>" <?= (string) $values['category_id'] === (string) $id ? 'selected' : '' ?>>
-                        <?= e($name) ?>
+                <?php foreach ($categories as $categoryId => $categoryName): ?>
+                    <option value="<?= $categoryId ?>" <?= (string) $values['category_id'] === (string) $categoryId ? 'selected' : '' ?>>
+                        <?= e($categoryName) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
         </div>
 
-        <div class="col-md-4">
+                <div class="col-md-4">
             <label for="season_id" class="form-label">Recommended season <span class="text-danger">*</span></label>
             <select class="form-select" id="season_id" name="season_id" required>
                 <option value="">-- Select season --</option>
-                <?php foreach ($seasons as $id => $name): ?>
-                    <option value="<?= $id ?>" <?= (string) $values['season_id'] === (string) $id ? 'selected' : '' ?>>
-                        <?= e($name) ?>
+                <?php foreach ($seasons as $seasonId => $seasonName): ?>
+                    <option value="<?= $seasonId ?>" <?= (string) $values['season_id'] === (string) $seasonId ? 'selected' : '' ?>>
+                        <?= e($seasonName) ?>
                     </option>
                 <?php endforeach; ?>
             </select>

@@ -1,8 +1,11 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farm.php';
+require_once __DIR__ . '/FarmValidator.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
+$farmModel       = new Farm($pdo);
+$validator       = new FarmValidator($farmModel);
 $errors          = [];
 $farmers         = [];
 $soilTypes       = [];
@@ -17,9 +20,9 @@ $values          = [
 ];
 
 try {
-    $farmers         = fetch_farmer_options($pdo);
-    $soilTypes       = fetch_lookup($pdo, 'soil_type', 'soil_type_id', 'soil_type_name');
-    $irrigationTypes = fetch_lookup($pdo, 'irrigation_type', 'irrigation_id', 'irrigation_name');
+    $farmers         = $farmModel->fetchFarmerOptions();
+    $soilTypes       = $farmModel->fetchSoilTypes();
+    $irrigationTypes = $farmModel->fetchIrrigationTypes();
 
     // Allows add.php?farmer_id=5 to pre-select the owner
     $preselect = filter_var($_GET['farmer_id'] ?? null, FILTER_VALIDATE_INT);
@@ -31,24 +34,12 @@ try {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_farm($_POST, $farmers, $soilTypes, $irrigationTypes, $pdo);
+            $result = $validator->validate($_POST, $farmers, $soilTypes, $irrigationTypes);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'INSERT INTO farm (farmer_id, farm_name, location, area_hectares, soil_type_id, irrigation_id)
-                     VALUES (:farmer_id, :farm_name, :location, :area, :soil_type_id, :irrigation_id)'
-                );
-                $stmt->execute([
-                    ':farmer_id'     => $c['farmer_id'],
-                    ':farm_name'     => $c['farm_name'],
-                    ':location'      => $c['location'],
-                    ':area'          => $c['area_hectares'],
-                    ':soil_type_id'  => $c['soil_type_id'],
-                    ':irrigation_id' => $c['irrigation_id'],
-                ]);
+                $farmModel->create($result['clean']);
                 set_flash('success', 'Farm added successfully.');
                 redirect('modules/farms/index.php');
             }

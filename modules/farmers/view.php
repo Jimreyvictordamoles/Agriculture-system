@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farmer.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
@@ -9,27 +9,18 @@ if (!$id) {
     redirect('modules/farmers/index.php');
 }
 
-$farms = [];
+$farmerModel = new Farmer($pdo);
+$farms       = [];
+
 try {
-    $stmt = $pdo->prepare(
-        'SELECT farmer_id, first_name, last_name, contact_number, address,
-                date_registered, created_at, updated_at
-         FROM farmer WHERE farmer_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $farmer = $stmt->fetch(PDO::FETCH_ASSOC);
+    $farmer = $farmerModel->find($id);
 
     if ($farmer) {
-        $stmt = $pdo->prepare(
-            'SELECT farm_id, farm_name, location, area_hectares
-             FROM farm WHERE farmer_id = :id ORDER BY farm_name'
-        );
-        $stmt->execute([':id' => $id]);
-        $farms = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $farms = $farmerModel->getFarms($id);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
-    $farmer = false;
+    $farmer = null;
 }
 
 if (!$farmer) {
@@ -81,26 +72,4 @@ require __DIR__ . '/../../includes/header.php';
                 <tr><td colspan="3" class="text-center text-muted py-3">This farmer has no farms yet.</td></tr>
             <?php endif; ?>
             <?php foreach ($farms as $farm): ?>
-                <tr>
-                    <td><a href="<?= BASE_URL ?>modules/farms/view.php?id=<?= (int) $farm['farm_id'] ?>"><?= e($farm['farm_name']) ?></a></td>
-                    <td><?= e($farm['location']) ?></td>
-                    <td><?= $farm['area_hectares'] === null ? display_value(null) : e(number_format((float) $farm['area_hectares'], 2)) ?></td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<div class="mt-3 d-flex gap-2">
-    <a href="edit.php?id=<?= (int) $farmer['farmer_id'] ?>" class="btn btn-primary">Edit</a>
-    <?php if (is_admin()): ?>
-        <form method="post" action="delete.php"
-              onsubmit="return confirm('Delete this farmer? This cannot be undone.');">
-            <?= csrf_field() ?>
-            <input type="hidden" name="farmer_id" value="<?= (int) $farmer['farmer_id'] ?>">
-            <button type="submit" class="btn btn-outline-danger">Delete</button>
-        </form>
-    <?php endif; ?>
-</div>
-<?php require __DIR__ . '/../../includes/footer.php'; ?>
+                

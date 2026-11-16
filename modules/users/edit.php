@@ -1,22 +1,27 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
 require_admin();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/User.php';
 
-$id = filter_var($_GET['id'] ?? ($_POST['user_id'] ?? null), FILTER_VALIDATE_INT);
-$account = false;
+$userModel = new User($pdo);
+
+$id      = filter_var($_GET['id'] ?? ($_POST['user_id'] ?? null), FILTER_VALIDATE_INT);
+$account = null;
 if ($id) {
-    $stmt = $pdo->prepare('SELECT user_id, username, full_name, role_id, is_active, approved_at, created_at FROM users WHERE user_id = :id');
-    $stmt->execute([':id' => $id]);
-    $account = $stmt->fetch(PDO::FETCH_ASSOC);
+    try {
+        $account = $userModel->find((int) $id);
+    } catch (PDOException $ex) {
+        error_log($ex->getMessage());
+    }
 }
 if (!$account) {
     set_flash('danger', 'User not found.');
     redirect('modules/users/index.php');
 }
 
-$roles    = user_roles($pdo);
-$isSelf   = (int) $account['user_id'] === (int) current_user()['user_id'];
+$roles    = $userModel->fetchRoles();
+$actorId  = (int) current_user()['user_id'];
+$isSelf   = (int) $account['user_id'] === $actorId;
 $state    = user_status($account);   // active, pending or deactivated
 $errors   = [];
 $values   = [
@@ -43,8 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Please choose a role.';
         }
         if (!$errors) {
-            $error = change_user($pdo, (int) $account['user_id'], (int) current_user()['user_id'],
-                                 (int) $roleId, $values['is_active'] === '1', $values['full_name']);
+            $error = $userModel->change(
+                (int) $account['user_id'],
+                $actorId,
+                (int) $roleId,
+                $values['is_active'] === '1',
+                $values['full_name']
+            );
             if ($error) {
                 $errors[] = $error;
             } else {
@@ -71,8 +81,8 @@ require __DIR__ . '/../../includes/header.php';
 </div>
 <div class="card">
     <div class="card-body">
-        <?php foreach ($errors as $error): ?>
-            <div class="alert alert-danger py-2"><?= e($error) ?></div>
+        <?php foreach ($errors as $err): ?>
+            <div class="alert alert-danger py-2"><?= e($err) ?></div>
         <?php endforeach; ?>
 
         <form method="post" action="">

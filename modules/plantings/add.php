@@ -1,7 +1,11 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+
+require_once __DIR__ . '/Planting.php';
+require_once __DIR__ . '/PlantingValidator.php';
+
+$plantings = new Planting($pdo);
 
 $errors   = [];
 $farms    = [];
@@ -18,9 +22,9 @@ $values   = [
 ];
 
 try {
-    $farms    = fetch_farm_options($pdo);
-    $crops    = fetch_crop_options($pdo);
-    $statuses = fetch_lookup($pdo, 'planting_status', 'status_id', 'status_name', true);
+    $farms    = $plantings->fetchFarmOptions();
+    $crops    = $plantings->fetchCropOptions();
+    $statuses = $plantings->fetchStatuses();
 
     // New plantings start as "Planted"
     $plantedId = array_search('Planted', $statuses, true);
@@ -38,26 +42,13 @@ try {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_planting($_POST, $farms, $crops, $statuses, $pdo);
+            $validator = new PlantingValidator($plantings);
+            $result    = $validator->validate($_POST, $farms, $crops, $statuses);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'INSERT INTO planting (farm_id, crop_id, status_id, planting_date, area_planted,
-                                           seed_quantity, expected_harvest_date)
-                     VALUES (:farm_id, :crop_id, :status_id, :planting_date, :area, :seed, :expected)'
-                );
-                $stmt->execute([
-                    ':farm_id'       => $c['farm_id'],
-                    ':crop_id'       => $c['crop_id'],
-                    ':status_id'     => $c['status_id'],
-                    ':planting_date' => $c['planting_date'],
-                    ':area'          => $c['area_planted'],
-                    ':seed'          => $c['seed_quantity'],
-                    ':expected'      => $c['expected_harvest_date'],
-                ]);
+                $plantings->create($result['clean']);
                 set_flash('success', 'Planting added successfully.');
                 redirect('modules/plantings/index.php');
             }

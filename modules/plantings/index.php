@@ -1,15 +1,17 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/Planting.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
-$perPage  = 10;
-$q        = trim($_GET['q'] ?? '');
-$farmId   = get_int('farm_id');
-$cropId   = get_int('crop_id');
-$statusId = get_int('status_id');
-$dateFrom = trim($_GET['date_from'] ?? '');
-$dateTo   = trim($_GET['date_to'] ?? '');
+$plantingModel = new Planting($pdo);
+$perPage       = 10;
+$q             = trim($_GET['q'] ?? '');
+$farmId        = get_int('farm_id');
+$cropId        = get_int('crop_id');
+$statusId      = get_int('status_id');
+$dateFrom      = trim($_GET['date_from'] ?? '');
+$dateTo        = trim($_GET['date_to'] ?? '');
 if (!valid_date_string($dateFrom)) {
     $dateFrom = '';
 }
@@ -17,61 +19,20 @@ if (!valid_date_string($dateTo)) {
     $dateTo = '';
 }
 
-// Only these columns may be used for sorting (never trust ?sort= directly)
-$sortMap = [
-    'id'        => ['p.planting_id'],
-    'crop'      => ['c.crop_name', 'c.variety'],
-    'farm'      => ['fm.farm_name'],
-    'planted'   => ['p.planting_date'],
-    'expected'  => ['p.expected_harvest_date'],
-    'area'      => ['p.area_planted'],
-    'status'    => ['ps.status_id'],
-    'harvests'  => ['harvest_count'],
-];
 $sort = $_GET['sort'] ?? 'planted';
-if (!isset($sortMap[$sort])) {
+if (!$plantingModel->isValidSort($sort)) {
     $sort = 'planted';
 }
-$dir      = (($_GET['dir'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
-$orderSql = implode(', ', array_map(fn($column) => "$column $dir NULLS LAST", $sortMap[$sort]));
+$dir = (($_GET['dir'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
 
-$where  = [];
-$params = [];
-
-if ($q !== '') {
-    $where[] = "(c.crop_name ILIKE :q1 OR c.variety ILIKE :q2 OR fm.farm_name ILIKE :q3
-                 OR (fr.first_name || ' ' || fr.last_name) ILIKE :q4)";
-    foreach ([':q1', ':q2', ':q3', ':q4'] as $name) {
-        $params[$name] = '%' . like_escape($q) . '%';
-    }
-}
-if ($farmId > 0) {
-    $where[]            = 'p.farm_id = :farm_id';
-    $params[':farm_id'] = $farmId;
-}
-if ($cropId > 0) {
-    $where[]            = 'p.crop_id = :crop_id';
-    $params[':crop_id'] = $cropId;
-}
-if ($statusId > 0) {
-    $where[]              = 'p.status_id = :status_id';
-    $params[':status_id'] = $statusId;
-}
-if ($dateFrom !== '') {
-    $where[]              = 'p.planting_date >= :date_from';
-    $params[':date_from'] = $dateFrom;
-}
-if ($dateTo !== '') {
-    $where[]            = 'p.planting_date <= :date_to';
-    $params[':date_to'] = $dateTo;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-$fromSql = 'FROM planting p
-            JOIN farm fm ON fm.farm_id = p.farm_id
-            JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-            JOIN crop c ON c.crop_id = p.crop_id
-            JOIN planting_status ps ON ps.status_id = p.status_id';
+$filters = [
+    'q'         => $q,
+    'farm_id'   => $farmId,
+    'crop_id'   => $cropId,
+    'status_id' => $statusId,
+    'date_from' => $dateFrom,
+    'date_to'   => $dateTo,
+];
 
 $plantings = [];
 $farms     = [];
@@ -80,31 +41,12 @@ $statuses  = [];
 $pager     = paginate(0, $perPage, 1);
 
 try {
-    $farms    = fetch_farm_options($pdo);
-    $crops    = fetch_crop_options($pdo);
-    $statuses = fetch_lookup($pdo, 'planting_status', 'status_id', 'status_name', true);
+    $farms    = $plantingModel->fetchFarmOptions();
+    $crops    = $plantingModel->fetchCropOptions();
+    $statuses = $plantingModel->fetchStatuses();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) $fromSql $whereSql");
-    $stmt->execute($params);
-    $pager = paginate((int) $stmt->fetchColumn(), $perPage, get_int('page', 1));
-
-    $sql = "SELECT p.planting_id, p.planting_date, p.expected_harvest_date, p.area_planted,
-                   c.crop_name, c.variety, fm.farm_id, fm.farm_name,
-                   fr.first_name, fr.last_name, ps.status_name,
-                   (SELECT COUNT(*) FROM harvest h WHERE h.planting_id = p.planting_id) AS harvest_count
-            $fromSql
-            $whereSql
-            ORDER BY $orderSql, p.planting_id DESC
-            LIMIT :limit OFFSET :offset";
-
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $pager['offset'], PDO::PARAM_INT);
-    $stmt->execute();
-    $plantings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $pager     = paginate($plantingModel->count($filters), $perPage, get_int('page', 1));
+    $plantings = $plantingModel->getAll($filters, $sort, $dir, $perPage, $pager['offset']);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
     set_flash('danger', 'Could not load the plantings. Please try again.');

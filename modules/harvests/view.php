@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/Harvest.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
@@ -10,28 +11,11 @@ if (!$id) {
 }
 
 try {
-    $stmt = $pdo->prepare(
-        'SELECT h.harvest_id, h.harvest_date, h.quantity_kg, h.selling_price_per_kg,
-                (h.quantity_kg * h.selling_price_per_kg) AS total_value,
-                h.created_at, h.updated_at,
-                p.planting_id, p.planting_date,
-                c.crop_id, c.crop_name, c.variety,
-                fm.farm_id, fm.farm_name, fr.farmer_id, fr.first_name, fr.last_name,
-                qg.grade_name, hr.remark_description
-         FROM harvest h
-         JOIN planting p ON p.planting_id = h.planting_id
-         JOIN farm fm ON fm.farm_id = p.farm_id
-         JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-         JOIN crop c ON c.crop_id = p.crop_id
-         JOIN harvest_remark hr ON hr.remark_id = h.remark_id
-         LEFT JOIN quality_grade qg ON qg.grade_id = h.grade_id
-         WHERE h.harvest_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $harvest = $stmt->fetch(PDO::FETCH_ASSOC);
+    $harvestModel = new Harvest($pdo);
+    $harvest      = $harvestModel->find($id);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
-    $harvest = false;
+    $harvest = null;
 }
 
 if (!$harvest) {

@@ -1,15 +1,17 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/Harvest.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
-$perPage  = 10;
-$q        = trim($_GET['q'] ?? '');
-$farmId   = get_int('farm_id');
-$gradeId  = get_int('grade_id');
-$remarkId = get_int('remark_id');
-$dateFrom = trim($_GET['date_from'] ?? '');
-$dateTo   = trim($_GET['date_to'] ?? '');
+$harvestModel = new Harvest($pdo);
+$perPage      = 10;
+$q            = trim($_GET['q'] ?? '');
+$farmId       = get_int('farm_id');
+$gradeId      = get_int('grade_id');
+$remarkId     = get_int('remark_id');
+$dateFrom     = trim($_GET['date_from'] ?? '');
+$dateTo       = trim($_GET['date_to'] ?? '');
 if (!valid_date_string($dateFrom)) {
     $dateFrom = '';
 }
@@ -17,64 +19,20 @@ if (!valid_date_string($dateTo)) {
     $dateTo = '';
 }
 
-// Only these columns may be used for sorting (never trust ?sort= directly)
-$sortMap = [
-    'id'       => ['h.harvest_id'],
-    'date'     => ['h.harvest_date'],
-    'crop'     => ['c.crop_name', 'c.variety'],
-    'farm'     => ['fm.farm_name'],
-    'quantity' => ['h.quantity_kg'],
-    'price'    => ['h.selling_price_per_kg'],
-    'value'    => ['total_value'],
-    'grade'    => ['h.grade_id'],
-    'remark'   => ['h.remark_id'],
-];
 $sort = $_GET['sort'] ?? 'date';
-if (!isset($sortMap[$sort])) {
+if (!$harvestModel->isValidSort($sort)) {
     $sort = 'date';
 }
-$dir      = (($_GET['dir'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
-$orderSql = implode(', ', array_map(fn($column) => "$column $dir NULLS LAST", $sortMap[$sort]));
+$dir = (($_GET['dir'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
 
-$where  = [];
-$params = [];
-
-if ($q !== '') {
-    $where[] = "(c.crop_name ILIKE :q1 OR c.variety ILIKE :q2 OR fm.farm_name ILIKE :q3
-                 OR (fr.first_name || ' ' || fr.last_name) ILIKE :q4)";
-    foreach ([':q1', ':q2', ':q3', ':q4'] as $name) {
-        $params[$name] = '%' . like_escape($q) . '%';
-    }
-}
-if ($farmId > 0) {
-    $where[]            = 'p.farm_id = :farm_id';
-    $params[':farm_id'] = $farmId;
-}
-if ($gradeId > 0) {
-    $where[]             = 'h.grade_id = :grade_id';
-    $params[':grade_id'] = $gradeId;
-}
-if ($remarkId > 0) {
-    $where[]              = 'h.remark_id = :remark_id';
-    $params[':remark_id'] = $remarkId;
-}
-if ($dateFrom !== '') {
-    $where[]              = 'h.harvest_date >= :date_from';
-    $params[':date_from'] = $dateFrom;
-}
-if ($dateTo !== '') {
-    $where[]            = 'h.harvest_date <= :date_to';
-    $params[':date_to'] = $dateTo;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-$fromSql = 'FROM harvest h
-            JOIN planting p ON p.planting_id = h.planting_id
-            JOIN farm fm ON fm.farm_id = p.farm_id
-            JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-            JOIN crop c ON c.crop_id = p.crop_id
-            JOIN harvest_remark hr ON hr.remark_id = h.remark_id
-            LEFT JOIN quality_grade qg ON qg.grade_id = h.grade_id';
+$filters = [
+    'q'         => $q,
+    'farm_id'   => $farmId,
+    'grade_id'  => $gradeId,
+    'remark_id' => $remarkId,
+    'date_from' => $dateFrom,
+    'date_to'   => $dateTo,
+];
 
 $harvests   = [];
 $farms      = [];
@@ -85,37 +43,16 @@ $totalValue = 0.0;
 $pager      = paginate(0, $perPage, 1);
 
 try {
-    $farms   = fetch_harvest_farm_options($pdo);
-    $grades  = fetch_lookup($pdo, 'quality_grade', 'grade_id', 'grade_name', true);
-    $remarks = fetch_lookup($pdo, 'harvest_remark', 'remark_id', 'remark_description', true);
+    $farms   = $harvestModel->fetchFarmOptions();
+    $grades  = $harvestModel->fetchGrades();
+    $remarks = $harvestModel->fetchRemarks();
 
-    // One query gives the row count and the totals for the current search and filters
-    $stmt = $pdo->prepare(
-        "SELECT COUNT(*), COALESCE(SUM(h.quantity_kg), 0),
-                COALESCE(SUM(h.quantity_kg * h.selling_price_per_kg), 0)
-         $fromSql $whereSql"
-    );
-    $stmt->execute($params);
-    [$count, $totalKg, $totalValue] = $stmt->fetch(PDO::FETCH_NUM);
-    $pager = paginate((int) $count, $perPage, get_int('page', 1));
+    $summary    = $harvestModel->summary($filters);
+    $totalKg    = $summary['total_kg'];
+    $totalValue = $summary['total_value'];
 
-    $sql = "SELECT h.harvest_id, h.harvest_date, h.quantity_kg, h.selling_price_per_kg,
-                   (h.quantity_kg * h.selling_price_per_kg) AS total_value,
-                   c.crop_name, c.variety, fm.farm_id, fm.farm_name,
-                   qg.grade_name, hr.remark_description
-            $fromSql
-            $whereSql
-            ORDER BY $orderSql, h.harvest_id DESC
-            LIMIT :limit OFFSET :offset";
-
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $pager['offset'], PDO::PARAM_INT);
-    $stmt->execute();
-    $harvests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $pager    = paginate($summary['count'], $perPage, get_int('page', 1));
+    $harvests = $harvestModel->getAll($filters, $sort, $dir, $perPage, $pager['offset']);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
     set_flash('danger', 'Could not load the harvests. Please try again.');

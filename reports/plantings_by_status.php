@@ -1,25 +1,14 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/Report.php';
+
+$report = new Report($pdo);
 
 [$dateFrom, $dateTo, $dateError] = report_dates();
 $statusId = get_int('status_id');
 $farmId   = get_int('farm_id');
 $cropId   = get_int('crop_id');
-
-// Filters that apply to every planting
-$baseWhere  = [];
-$baseParams = [];
-add_date_range('p.planting_date', $dateFrom, $dateTo, $baseWhere, $baseParams);
-if ($farmId > 0) {
-    $baseWhere[]            = 'p.farm_id = :farm_id';
-    $baseParams[':farm_id'] = $farmId;
-}
-if ($cropId > 0) {
-    $baseWhere[]            = 'p.crop_id = :crop_id';
-    $baseParams[':crop_id'] = $cropId;
-}
 
 $summary   = [];
 $rows      = [];
@@ -29,46 +18,13 @@ $crops     = [];
 $loadError = false;
 
 try {
-    $statuses = fetch_lookup($pdo, 'planting_status', 'status_id', 'status_name', true);
-    $farms    = report_farm_options($pdo);
-    $crops    = report_crop_options($pdo);
+    $statuses = $report->statusOptions();
+    $farms    = $report->farmOptions();
+    $crops    = $report->cropOptions();
 
     if (!$dateError) {
-        // Summary: statuses with no plantings still appear (the filters go in the JOIN)
-        $joinSql = $baseWhere ? 'AND ' . implode(' AND ', $baseWhere) : '';
-        $stmt = $pdo->prepare(
-            "SELECT ps.status_id, ps.status_name, COUNT(p.planting_id) AS planting_count,
-                    COALESCE(SUM(p.area_planted), 0) AS total_area
-             FROM planting_status ps
-             LEFT JOIN planting p ON p.status_id = ps.status_id $joinSql
-             GROUP BY ps.status_id, ps.status_name
-             ORDER BY ps.status_id"
-        );
-        $stmt->execute($baseParams);
-        $summary = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Detail list
-        $where  = $baseWhere;
-        $params = $baseParams;
-        if ($statusId > 0) {
-            $where[]              = 'p.status_id = :status_id';
-            $params[':status_id'] = $statusId;
-        }
-        $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
-
-        $stmt = $pdo->prepare(
-            "SELECT p.planting_id, p.planting_date, p.expected_harvest_date, p.area_planted,
-                    c.crop_name, c.variety, fm.farm_name, fr.first_name, fr.last_name, ps.status_name
-             FROM planting p
-             JOIN farm fm ON fm.farm_id = p.farm_id
-             JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-             JOIN crop c ON c.crop_id = p.crop_id
-             JOIN planting_status ps ON ps.status_id = p.status_id
-             $whereSql
-             ORDER BY ps.status_id, p.planting_date DESC, p.planting_id DESC"
-        );
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $summary = $report->plantingStatusSummary($dateFrom, $dateTo, $farmId, $cropId);
+        $rows    = $report->plantingRecords($statusId, $dateFrom, $dateTo, $farmId, $cropId);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());

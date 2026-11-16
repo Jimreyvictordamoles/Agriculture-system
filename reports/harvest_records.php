@@ -1,34 +1,15 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/Report.php';
+
+$report = new Report($pdo);
 
 [$dateFrom, $dateTo, $dateError] = report_dates();
 $farmId   = get_int('farm_id');
 $cropId   = get_int('crop_id');
 $gradeId  = get_int('grade_id');
 $remarkId = get_int('remark_id');
-
-$where  = [];
-$params = [];
-add_date_range('h.harvest_date', $dateFrom, $dateTo, $where, $params);
-if ($farmId > 0) {
-    $where[]            = 'p.farm_id = :farm_id';
-    $params[':farm_id'] = $farmId;
-}
-if ($cropId > 0) {
-    $where[]            = 'p.crop_id = :crop_id';
-    $params[':crop_id'] = $cropId;
-}
-if ($gradeId > 0) {
-    $where[]             = 'h.grade_id = :grade_id';
-    $params[':grade_id'] = $gradeId;
-}
-if ($remarkId > 0) {
-    $where[]              = 'h.remark_id = :remark_id';
-    $params[':remark_id'] = $remarkId;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $rows      = [];
 $farms     = [];
@@ -38,29 +19,13 @@ $remarks   = [];
 $loadError = false;
 
 try {
-    $farms   = report_farm_options($pdo);
-    $crops   = report_crop_options($pdo);
-    $grades  = fetch_lookup($pdo, 'quality_grade', 'grade_id', 'grade_name', true);
-    $remarks = fetch_lookup($pdo, 'harvest_remark', 'remark_id', 'remark_description', true);
+    $farms   = $report->farmOptions();
+    $crops   = $report->cropOptions();
+    $grades  = $report->gradeOptions();
+    $remarks = $report->remarkOptions();
 
     if (!$dateError) {
-        $stmt = $pdo->prepare(
-            "SELECT h.harvest_id, h.harvest_date, h.quantity_kg, h.selling_price_per_kg,
-                    (h.quantity_kg * h.selling_price_per_kg) AS total_value,
-                    c.crop_name, c.variety, fm.farm_name, fr.first_name, fr.last_name,
-                    qg.grade_name, hr.remark_description
-             FROM harvest h
-             JOIN planting p ON p.planting_id = h.planting_id
-             JOIN farm fm ON fm.farm_id = p.farm_id
-             JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-             JOIN crop c ON c.crop_id = p.crop_id
-             JOIN harvest_remark hr ON hr.remark_id = h.remark_id
-             LEFT JOIN quality_grade qg ON qg.grade_id = h.grade_id
-             $whereSql
-             ORDER BY h.harvest_date DESC, h.harvest_id DESC"
-        );
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $report->harvestRecords($dateFrom, $dateTo, $farmId, $cropId, $gradeId, $remarkId);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());

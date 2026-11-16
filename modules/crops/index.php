@@ -1,44 +1,20 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Crop.php';
 require_login();
 
 $perPage    = 10;
-$q          = trim($_GET['q'] ?? '');
-$categoryId = get_int('category_id');
-$seasonId   = get_int('season_id');
+$cropModel  = new Crop($pdo);
 
-// Only these columns may be used for sorting (never trust ?sort= directly)
-$sortMap = [
-    'id'       => 'c.crop_id',
-    'name'     => 'c.crop_name',
-    'variety'  => 'c.variety',
-    'category' => 'cc.category_name',
-    'season'   => 's.season_name',
-    'days'     => 'c.growing_period_days',
-];
+$q          = trim($_GET['q'] ?? '');
+$categoryId = (int) get_int('category_id');
+$seasonId   = (int) get_int('season_id');
+
 $sort = $_GET['sort'] ?? 'name';
-if (!isset($sortMap[$sort])) {
+if (!$cropModel->isValidSort($sort)) {
     $sort = 'name';
 }
 $dir = (($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
-
-$where  = [];
-$params = [];
-
-if ($q !== '') {
-    $where[]       = '(c.crop_name ILIKE :q1 OR c.variety ILIKE :q2)';
-    $params[':q1'] = '%' . like_escape($q) . '%';
-    $params[':q2'] = '%' . like_escape($q) . '%';
-}
-if ($categoryId > 0) {
-    $where[]                = 'c.category_id = :category_id';
-    $params[':category_id'] = $categoryId;
-}
-if ($seasonId > 0) {
-    $where[]              = 'c.season_id = :season_id';
-    $params[':season_id'] = $seasonId;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
 $crops      = [];
 $categories = [];
@@ -46,30 +22,15 @@ $seasons    = [];
 $pager      = paginate(0, $perPage, 1);
 
 try {
-    $categories = fetch_lookup($pdo, 'crop_category', 'category_id', 'category_name');
-    $seasons    = fetch_lookup($pdo, 'season', 'season_id', 'season_name');
+    $categories = $cropModel->getCategories();
+    $seasons    = $cropModel->getSeasons();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM crop c $whereSql");
-    $stmt->execute($params);
-    $pager = paginate((int) $stmt->fetchColumn(), $perPage, get_int('page', 1));
+    $total = $cropModel->count($q, $categoryId, $seasonId);
+    $pager = paginate($total, $perPage, get_int('page', 1));
 
-    $sql = "SELECT c.crop_id, c.crop_name, c.variety, c.growing_period_days,
-                   cc.category_name, s.season_name
-            FROM crop c
-            LEFT JOIN crop_category cc ON cc.category_id = c.category_id
-            LEFT JOIN season s ON s.season_id = c.season_id
-            $whereSql
-            ORDER BY {$sortMap[$sort]} $dir NULLS LAST, c.crop_id ASC
-            LIMIT :limit OFFSET :offset";
-
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $pager['offset'], PDO::PARAM_INT);
-    $stmt->execute();
-    $crops = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $crops = $cropModel->getAll(
+        $q, $categoryId, $seasonId, $sort, $dir, $perPage, $pager['offset']
+    );
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
     set_flash('danger', 'Could not load the crops. Please try again.');

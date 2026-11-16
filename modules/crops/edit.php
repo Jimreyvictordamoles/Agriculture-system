@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Crop.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/CropValidator.php';
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
@@ -9,18 +10,15 @@ if (!$id) {
     redirect('modules/crops/index.php');
 }
 
+$cropModel  = new Crop($pdo);
+$validator  = new CropValidator($cropModel);
 $errors     = [];
 $categories = [];
 $seasons    = [];
 $values     = [];
 
 try {
-    $stmt = $pdo->prepare(
-        'SELECT crop_name, variety, category_id, season_id, growing_period_days
-         FROM crop WHERE crop_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $crop = $stmt->fetch(PDO::FETCH_ASSOC);
+    $crop = $cropModel->findForEdit($id);
 
     if (!$crop) {
         set_flash('danger', 'Crop not found.');
@@ -35,33 +33,19 @@ try {
         'growing_period_days' => (string) ($crop['growing_period_days'] ?? ''),
     ];
 
-    $categories = fetch_lookup($pdo, 'crop_category', 'category_id', 'category_name');
-    $seasons    = fetch_lookup($pdo, 'season', 'season_id', 'season_name');
+    $categories = $cropModel->getCategories();
+    $seasons    = $cropModel->getSeasons();
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_crop($_POST, $categories, $seasons, $pdo, $id);
+            $result = $validator->validate($_POST, $categories, $seasons, $id);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'UPDATE crop
-                     SET crop_name = :name, variety = :variety, category_id = :category_id,
-                         season_id = :season_id, growing_period_days = :days
-                     WHERE crop_id = :id'
-                );
-                $stmt->execute([
-                    ':name'        => $c['crop_name'],
-                    ':variety'     => $c['variety'],
-                    ':category_id' => $c['category_id'],
-                    ':season_id'   => $c['season_id'],
-                    ':days'        => $c['growing_period_days'],
-                    ':id'          => $id,
-                ]);
+                $cropModel->update($id, $result['clean']);
                 set_flash('success', 'Crop updated successfully.');
                 redirect('modules/crops/index.php');
             }

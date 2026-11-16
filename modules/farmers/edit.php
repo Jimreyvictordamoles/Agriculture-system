@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farmer.php';
+require_once __DIR__ . '/FarmerValidator.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
@@ -9,8 +10,10 @@ if (!$id) {
     redirect('modules/farmers/index.php');
 }
 
-$errors = [];
-$values = [
+$farmerModel = new Farmer($pdo);
+$validator   = new FarmerValidator($farmerModel);
+$errors      = [];
+$values      = [
     'first_name'      => '',
     'last_name'       => '',
     'contact_number'  => '',
@@ -19,12 +22,7 @@ $values = [
 ];
 
 try {
-    $stmt = $pdo->prepare(
-        'SELECT first_name, last_name, contact_number, address, date_registered
-         FROM farmer WHERE farmer_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $farmer = $stmt->fetch(PDO::FETCH_ASSOC);
+    $farmer = $farmerModel->findForEdit($id);
 
     if (!$farmer) {
         set_flash('danger', 'Farmer not found.');
@@ -39,26 +37,12 @@ try {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_farmer($_POST, $pdo, $id);
+            $result = $validator->validate($_POST, $id);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'UPDATE farmer
-                     SET first_name = :first_name, last_name = :last_name, contact_number = :contact,
-                         address = :address, date_registered = :registered
-                     WHERE farmer_id = :id'
-                );
-                $stmt->execute([
-                    ':first_name' => $c['first_name'],
-                    ':last_name'  => $c['last_name'],
-                    ':contact'    => $c['contact_number'],
-                    ':address'    => $c['address'],
-                    ':registered' => $c['date_registered'],
-                    ':id'         => $id,
-                ]);
+                $farmerModel->update($id, $result['clean']);
                 set_flash('success', 'Farmer updated successfully.');
                 redirect('modules/farmers/index.php');
             }

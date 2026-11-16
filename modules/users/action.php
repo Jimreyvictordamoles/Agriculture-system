@@ -2,7 +2,9 @@
 // Quick actions from the users list: approve / reactivate, deactivate, remove.
 require_once __DIR__ . '/../../includes/auth.php';
 require_admin();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/User.php';
+
+$userModel = new User($pdo);
 
 // Send the Administrator back to the same search / filter / page they were on
 $back = 'modules/users/index.php' . users_back_query((string) ($_POST['back'] ?? ''));
@@ -42,7 +44,7 @@ $done    = '';
 switch ($do) {
     case 'activate':
         $error = $status === 'active' ? 'This account is already active.'
-               : change_user($pdo, (int) $userId, $actorId, null, true);
+               : $userModel->change((int) $userId, $actorId, null, true);
         $done  = $status === 'pending'
             ? "$name was approved and can now log in."
             : "$name was reactivated and can log in again.";
@@ -50,12 +52,12 @@ switch ($do) {
 
     case 'deactivate':
         $error = $status !== 'active' ? 'This account is not active.'
-               : change_user($pdo, (int) $userId, $actorId, null, false);
+               : $userModel->change((int) $userId, $actorId, null, false);
         $done  = "$name was deactivated and can no longer log in.";
         break;
 
     case 'remove':
-        $error = remove_user($pdo, (int) $userId, $actorId);
+        $error = $userModel->remove((int) $userId, $actorId);
         $done  = $status === 'pending'
             ? "The sign-up request from $name was rejected and removed."
             : "$name was removed.";

@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farmer.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+
+$farmerModel = new Farmer($pdo);
 
 $perPage  = 10;
 $q        = trim($_GET['q'] ?? '');
@@ -14,67 +16,18 @@ if (!valid_date_string($dateTo)) {
     $dateTo = '';
 }
 
-// Only these columns may be used for sorting (never trust ?sort= directly)
-$sortMap = [
-    'id'         => ['f.farmer_id'],
-    'name'       => ['f.last_name', 'f.first_name'],
-    'contact'    => ['f.contact_number'],
-    'address'    => ['f.address'],
-    'registered' => ['f.date_registered'],
-    'farms'      => ['farm_count'],
-];
 $sort = $_GET['sort'] ?? 'name';
-if (!isset($sortMap[$sort])) {
+if (!$farmerModel->isValidSort($sort)) {
     $sort = 'name';
 }
-$dir      = (($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
-$orderSql = implode(', ', array_map(fn($column) => "$column $dir NULLS LAST", $sortMap[$sort]));
-
-$where  = [];
-$params = [];
-
-if ($q !== '') {
-    $where[] = "(f.first_name ILIKE :q1 OR f.last_name ILIKE :q2
-                 OR (f.first_name || ' ' || f.last_name) ILIKE :q3
-                 OR f.contact_number ILIKE :q4 OR f.address ILIKE :q5)";
-    foreach ([':q1', ':q2', ':q3', ':q4', ':q5'] as $name) {
-        $params[$name] = '%' . like_escape($q) . '%';
-    }
-}
-if ($dateFrom !== '') {
-    $where[]            = 'f.date_registered >= :date_from';
-    $params[':date_from'] = $dateFrom;
-}
-if ($dateTo !== '') {
-    $where[]          = 'f.date_registered <= :date_to';
-    $params[':date_to'] = $dateTo;
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+$dir = (($_GET['dir'] ?? 'asc') === 'desc') ? 'desc' : 'asc';
 
 $farmers = [];
 $pager   = paginate(0, $perPage, 1);
 
 try {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM farmer f $whereSql");
-    $stmt->execute($params);
-    $pager = paginate((int) $stmt->fetchColumn(), $perPage, get_int('page', 1));
-
-    $sql = "SELECT f.farmer_id, f.first_name, f.last_name, f.contact_number, f.address,
-                   f.date_registered,
-                   (SELECT COUNT(*) FROM farm fm WHERE fm.farmer_id = f.farmer_id) AS farm_count
-            FROM farmer f
-            $whereSql
-            ORDER BY $orderSql, f.farmer_id ASC
-            LIMIT :limit OFFSET :offset";
-
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $pager['offset'], PDO::PARAM_INT);
-    $stmt->execute();
-    $farmers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $pager   = paginate($farmerModel->count($q, $dateFrom, $dateTo), $perPage, get_int('page', 1));
+    $farmers = $farmerModel->getAll($q, $dateFrom, $dateTo, $sort, $dir, $perPage, $pager['offset']);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
     set_flash('danger', 'Could not load the farmers. Please try again.');

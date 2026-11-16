@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/Report.php';
+
+$report = new Report($pdo);
 
 $reportKey = 'harvest_value';   // decides which columns are shown
 
@@ -9,7 +11,7 @@ $reportKey = 'harvest_value';   // decides which columns are shown
 $farmId  = get_int('farm_id');
 $cropId  = get_int('crop_id');
 $groupBy = $_GET['group_by'] ?? 'crop';
-if (!isset(harvest_group_options()[$groupBy])) {
+if (!isset($report->harvestGroupOptions()[$groupBy])) {
     $groupBy = 'crop';
 }
 
@@ -19,10 +21,10 @@ $crops     = [];
 $loadError = false;
 
 try {
-    $farms = report_farm_options($pdo);
-    $crops = report_crop_options($pdo);
+    $farms = $report->farmOptions();
+    $crops = $report->cropOptions();
     if (!$dateError) {
-        $rows = harvest_summary($pdo, $groupBy, $dateFrom, $dateTo, $farmId, $cropId);
+        $rows = $report->harvestSummary($groupBy, $dateFrom, $dateTo, $farmId, $cropId);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
@@ -37,7 +39,7 @@ foreach ($rows as $row) {
     $totalValue   += (float) $row['total_value'];
     $totalHarvest += (int) $row['harvest_count'];
 }
-$groupLabel = harvest_group_options()[$groupBy];
+$groupLabel = $report->harvestGroupOptions()[$groupBy];
 $isQuantity = $reportKey === 'harvest_total';
 
 if (wants_csv() && !$dateError && !$loadError) {
@@ -82,7 +84,7 @@ echo report_print_styles();
         <div class="col-md-2">
             <label for="group_by" class="form-label mb-1">Group by</label>
             <select class="form-select" id="group_by" name="group_by">
-                <?php foreach (harvest_group_options() as $key => $name): ?>
+                <?php foreach ($report->harvestGroupOptions() as $key => $name): ?>
                     <option value="<?= e($key) ?>" <?= $groupBy === $key ? 'selected' : '' ?>><?= e($name) ?></option>
                 <?php endforeach; ?>
             </select>

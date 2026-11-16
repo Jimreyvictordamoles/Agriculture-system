@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/Planting.php';
+
+$plantings = new Planting($pdo);
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
 if (!$id) {
@@ -11,38 +13,14 @@ if (!$id) {
 
 $harvests = [];
 try {
-    $stmt = $pdo->prepare(
-        'SELECT p.planting_id, p.planting_date, p.expected_harvest_date, p.area_planted,
-                p.seed_quantity, p.created_at, p.updated_at,
-                c.crop_id, c.crop_name, c.variety,
-                fm.farm_id, fm.farm_name, fr.farmer_id, fr.first_name, fr.last_name,
-                ps.status_name
-         FROM planting p
-         JOIN farm fm ON fm.farm_id = p.farm_id
-         JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-         JOIN crop c ON c.crop_id = p.crop_id
-         JOIN planting_status ps ON ps.status_id = p.status_id
-         WHERE p.planting_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $planting = $stmt->fetch(PDO::FETCH_ASSOC);
+    $planting = $plantings->find($id);
 
     if ($planting) {
-        $stmt = $pdo->prepare(
-            'SELECT h.harvest_id, h.harvest_date, h.quantity_kg, h.selling_price_per_kg,
-                    qg.grade_name, hr.remark_description
-             FROM harvest h
-             JOIN harvest_remark hr ON hr.remark_id = h.remark_id
-             LEFT JOIN quality_grade qg ON qg.grade_id = h.grade_id
-             WHERE h.planting_id = :id
-             ORDER BY h.harvest_date DESC, h.harvest_id DESC'
-        );
-        $stmt->execute([':id' => $id]);
-        $harvests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $harvests = $plantings->fetchHarvests($id);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
-    $planting = false;
+    $planting = null;
 }
 
 if (!$planting) {

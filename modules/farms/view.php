@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farm.php';
 require_login();
 
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
@@ -8,36 +9,18 @@ if (!$id) {
     redirect('modules/farms/index.php');
 }
 
+$farmModel = new Farm($pdo);
 $plantings = [];
+
 try {
-    $stmt = $pdo->prepare(
-        'SELECT fm.farm_id, fm.farm_name, fm.location, fm.area_hectares, fm.created_at, fm.updated_at,
-                fr.farmer_id, fr.first_name, fr.last_name,
-                st.soil_type_name, ir.irrigation_name
-         FROM farm fm
-         JOIN farmer fr ON fr.farmer_id = fm.farmer_id
-         LEFT JOIN soil_type st ON st.soil_type_id = fm.soil_type_id
-         LEFT JOIN irrigation_type ir ON ir.irrigation_id = fm.irrigation_id
-         WHERE fm.farm_id = :id'
-    );
-    $stmt->execute([':id' => $id]);
-    $farm = $stmt->fetch(PDO::FETCH_ASSOC);
+    $farm = $farmModel->find($id);
 
     if ($farm) {
-        $stmt = $pdo->prepare(
-            'SELECT p.planting_id, c.crop_name, c.variety, p.planting_date, ps.status_name
-             FROM planting p
-             JOIN crop c ON c.crop_id = p.crop_id
-             JOIN planting_status ps ON ps.status_id = p.status_id
-             WHERE p.farm_id = :id
-             ORDER BY p.planting_date DESC, p.planting_id DESC'
-        );
-        $stmt->execute([':id' => $id]);
-        $plantings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $plantings = $farmModel->getPlantings($id);
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
-    $farm = false;
+    $farm = null;
 }
 
 if (!$farm) {

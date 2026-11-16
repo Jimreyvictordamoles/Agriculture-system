@@ -1,10 +1,15 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Crop.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/CropValidator.php';
 
-$errors = [];
-$values = [
+$cropModel  = new Crop($pdo);
+$validator  = new CropValidator($cropModel);
+$errors     = [];
+$categories = [];
+$seasons    = [];
+$values     = [
     'crop_name'           => '',
     'variety'             => '',
     'category_id'         => '',
@@ -13,30 +18,19 @@ $values = [
 ];
 
 try {
-    $categories = fetch_lookup($pdo, 'crop_category', 'category_id', 'category_name');
-    $seasons    = fetch_lookup($pdo, 'season', 'season_id', 'season_name');
+    $categories = $cropModel->getCategories();
+    $seasons    = $cropModel->getSeasons();
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_crop($_POST, $categories, $seasons, $pdo);
+            $result = $validator->validate($_POST, $categories, $seasons);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'INSERT INTO crop (crop_name, variety, category_id, season_id, growing_period_days)
-                     VALUES (:name, :variety, :category_id, :season_id, :days)'
-                );
-                $stmt->execute([
-                    ':name'        => $c['crop_name'],
-                    ':variety'     => $c['variety'],
-                    ':category_id' => $c['category_id'],
-                    ':season_id'   => $c['season_id'],
-                    ':days'        => $c['growing_period_days'],
-                ]);
+                $cropModel->create($result['clean']);
                 set_flash('success', 'Crop added successfully.');
                 redirect('modules/crops/index.php');
             }
@@ -44,9 +38,7 @@ try {
     }
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
-    $categories = $categories ?? [];
-    $seasons    = $seasons ?? [];
-    $errors[]   = $ex->getCode() === '23505'
+    $errors[] = $ex->getCode() === '23505'
         ? 'A crop with the same name and variety already exists.'
         : 'Something went wrong. Please try again.';
 }

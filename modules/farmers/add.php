@@ -1,10 +1,13 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/Farmer.php';
+require_once __DIR__ . '/FarmerValidator.php';
 require_login();
-require_once __DIR__ . '/_helpers.php';
 
-$errors = [];
-$values = [
+$farmerModel = new Farmer($pdo);
+$validator   = new FarmerValidator($farmerModel);
+$errors      = [];
+$values      = [
     'first_name'      => '',
     'last_name'       => '',
     'contact_number'  => '',
@@ -17,23 +20,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!verify_csrf()) {
             $errors[] = 'Your session expired. Please try again.';
         } else {
-            $result = validate_farmer($_POST, $pdo);
+            $result = $validator->validate($_POST);
             $errors = $result['errors'];
             $values = $result['values'];
 
             if (!$errors) {
-                $c    = $result['clean'];
-                $stmt = $pdo->prepare(
-                    'INSERT INTO farmer (first_name, last_name, contact_number, address, date_registered)
-                     VALUES (:first_name, :last_name, :contact, :address, :registered)'
-                );
-                $stmt->execute([
-                    ':first_name' => $c['first_name'],
-                    ':last_name'  => $c['last_name'],
-                    ':contact'    => $c['contact_number'],
-                    ':address'    => $c['address'],
-                    ':registered' => $c['date_registered'],
-                ]);
+                $farmerModel->create($result['clean']);
                 set_flash('success', 'Farmer added successfully.');
                 redirect('modules/farmers/index.php');
             }

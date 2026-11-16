@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
 require_admin();   // only Administrators may manage users
-require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/User.php';
+
+$userModel = new User($pdo);
 
 $perPage = 10;
 $q       = trim($_GET['q'] ?? '');
@@ -11,41 +13,14 @@ if (!in_array($status, ['active', 'pending', 'deactivated'], true)) {
     $status = '';
 }
 
-// Only these columns may be used for sorting (never trust ?sort= directly)
-$sortMap = [
-    'id'       => ['u.user_id'],
-    'name'     => ['u.full_name'],
-    'username' => ['u.username'],
-    'role'     => ['r.role_name'],
-    'status'   => ['u.is_active', 'u.approved_at'],
-    'created'  => ['u.created_at'],
-];
+// The model decides which columns may be sorted (never trust ?sort= directly)
 $sort = $_GET['sort'] ?? 'created';
-if (!isset($sortMap[$sort])) {
+if (!$userModel->isValidSort($sort)) {
     $sort = 'created';
 }
-$dir      = (($_GET['dir'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
-$orderSql = implode(', ', array_map(fn($column) => "$column $dir NULLS LAST", $sortMap[$sort]));
+$dir = (($_GET['dir'] ?? 'desc') === 'asc') ? 'asc' : 'desc';
 
-$where  = [];
-$params = [];
-if ($q !== '') {
-    $where[]       = '(u.username ILIKE :q1 OR u.full_name ILIKE :q2)';
-    $params[':q1'] = '%' . like_escape($q) . '%';
-    $params[':q2'] = '%' . like_escape($q) . '%';
-}
-if ($roleId > 0) {
-    $where[]            = 'u.role_id = :role_id';
-    $params[':role_id'] = $roleId;
-}
-if ($status === 'active') {
-    $where[] = 'u.is_active = TRUE';
-} elseif ($status === 'pending') {
-    $where[] = 'u.is_active = FALSE AND u.approved_at IS NULL';
-} elseif ($status === 'deactivated') {
-    $where[] = 'u.is_active = FALSE AND u.approved_at IS NOT NULL';
-}
-$whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+$filters = ['q' => $q, 'role_id' => $roleId, 'status' => $status];
 
 $roles  = [];
 $users  = [];
@@ -53,35 +28,10 @@ $counts = ['total' => 0, 'active' => 0, 'pending' => 0, 'deactivated' => 0];
 $pager  = paginate(0, $perPage, 1);
 
 try {
-    $roles = user_roles($pdo);
-
-    // Numbers shown on the status tabs (always for all users, whatever the search)
-    $counts = $pdo->query(
-        'SELECT COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE is_active) AS active,
-                COUNT(*) FILTER (WHERE NOT is_active AND approved_at IS NULL) AS pending,
-                COUNT(*) FILTER (WHERE NOT is_active AND approved_at IS NOT NULL) AS deactivated
-           FROM users'
-    )->fetch(PDO::FETCH_ASSOC);
-
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users u JOIN user_role r ON r.role_id = u.role_id $whereSql");
-    $stmt->execute($params);
-    $pager = paginate((int) $stmt->fetchColumn(), $perPage, get_int('page', 1));
-
-    $stmt = $pdo->prepare(
-        "SELECT u.user_id, u.username, u.full_name, u.is_active, u.approved_at, u.created_at, r.role_name
-           FROM users u JOIN user_role r ON r.role_id = u.role_id
-           $whereSql
-          ORDER BY $orderSql, u.user_id ASC
-          LIMIT :limit OFFSET :offset"
-    );
-    foreach ($params as $key => $value) {
-        $stmt->bindValue($key, $value);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $pager['offset'], PDO::PARAM_INT);
-    $stmt->execute();
-    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $roles  = $userModel->fetchRoles();
+    $counts = $userModel->statusCounts();   // numbers on the status tabs (all users, whatever the search)
+    $pager  = paginate($userModel->count($filters), $perPage, get_int('page', 1));
+    $users  = $userModel->getAll($filters, $sort, $dir, $perPage, $pager['offset']);
 } catch (PDOException $ex) {
     error_log($ex->getMessage());
     set_flash('danger', 'Could not load the users. Please try again.');
